@@ -3,3 +3,4 @@ rclone.conf
 *.bak
 *.lock
 backup_log.txt*
+rclone/rclone.exe

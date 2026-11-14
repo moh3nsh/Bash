@@ -25,9 +25,11 @@ run aborts if the backup disk has less than `MinFreeGB` free.
 | `backup.config.example.json` | Config reference |
 
 ## Install on a new server
-Prerequisites: `rclone.exe` unpacked at `C:\rclone`, a remote configured in
-`C:\rclone\rclone.conf` (edit with `notepad`, do not paste keys into shells/chats),
-and a Windows account that is `sysadmin` in SQL Server.
+Prerequisites: a Windows account that is `sysadmin` in SQL Server. `install.ps1`
+copies `rclone\rclone.exe` (or an `rclone-*-windows-amd64.zip` found in this folder,
+in `rclone\`, or one level up) to `C:\rclone`, or downloads it if the server has internet. If `C:\rclone\rclone.conf` is missing it copies
+`rclone.conf.template`; edit it with `notepad` (never paste keys into shells/chats)
+and run `install.ps1` again.
 
 ```powershell
 # PowerShell as Administrator, inside this folder

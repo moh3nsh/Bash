@@ -44,8 +44,47 @@ if (-not (New-Object Security.Principal.WindowsPrincipal($id)).IsInRole([Securit
 
 Step 'Checking prerequisites'
 if (-not (Test-Path (Join-Path $PSScriptRoot 'backup.ps1'))) { Fail "backup.ps1 not found next to install.ps1" }
-if (-not (Test-Path $RcloneExe))  { Fail "rclone not found at $RcloneExe (download from rclone.org and unpack there)" }
-if (-not (Test-Path $RcloneConf)) { Fail "rclone config not found at $RcloneConf (run: $RcloneExe config --config $RcloneConf)" }
+# rclone: use the copy next to this script, else download it from rclone.org
+if (-not (Test-Path $RcloneExe)) {
+    New-Item -ItemType Directory -Path (Split-Path $RcloneExe) -Force | Out-Null
+    $local = Join-Path $PSScriptRoot 'rclone\rclone.exe'
+    $bundleZip = @((Join-Path $PSScriptRoot 'rclone'), $PSScriptRoot, (Split-Path $PSScriptRoot)) |
+        Where-Object { Test-Path $_ } |
+        ForEach-Object { Get-ChildItem $_ -Filter 'rclone*windows-amd64.zip' -File -ErrorAction SilentlyContinue } |
+        Select-Object -First 1
+    if (Test-Path $local) {
+        Step "Copying bundled rclone to $RcloneExe"
+        Copy-Item $local $RcloneExe -Force
+    }
+    elseif ($bundleZip) {
+        Step "Unpacking bundled $($bundleZip.Name)"
+        $tmp = Join-Path $env:TEMP 'rclone_unpack'
+        if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
+        Expand-Archive $bundleZip.FullName $tmp -Force
+        $found = Get-ChildItem $tmp -Recurse -Filter rclone.exe | Select-Object -First 1
+        if (-not $found) { Fail "rclone.exe not found inside $($bundleZip.FullName)" }
+        Copy-Item $found.FullName $RcloneExe -Force
+    }
+    else {
+        Step 'Downloading rclone from downloads.rclone.org'
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            $zip = Join-Path $env:TEMP 'rclone.zip'
+            $tmp = Join-Path $env:TEMP 'rclone_unpack'
+            Invoke-WebRequest 'https://downloads.rclone.org/rclone-current-windows-amd64.zip' -OutFile $zip -UseBasicParsing
+            if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
+            Expand-Archive $zip $tmp -Force
+            $found = Get-ChildItem $tmp -Recurse -Filter rclone.exe | Select-Object -First 1
+            Copy-Item $found.FullName $RcloneExe -Force
+        }
+        catch { Fail "Could not get rclone ($($_.Exception.Message)). Put rclone.exe in $PSScriptRoot\rclone\ and run again." }
+    }
+}
+if (-not (Test-Path $RcloneConf)) {
+    $tpl = Join-Path $PSScriptRoot 'rclone.conf.template'
+    if (Test-Path $tpl) { Copy-Item $tpl $RcloneConf -Force }
+    Fail "rclone config was missing. A template was copied to $RcloneConf - edit it with: notepad $RcloneConf  (fill endpoint + keys), then run install.ps1 again."
+}
 if (-not (Get-Command sqlcmd -ErrorAction SilentlyContinue)) { Fail 'sqlcmd not found in PATH' }
 
 $sa = & sqlcmd -S $SqlInstance -E -h -1 -W -Q "SET NOCOUNT ON; SELECT IS_SRVROLEMEMBER('sysadmin')" 2>&1 | Out-String
