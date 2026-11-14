@@ -1,0 +1,14 @@
+{
+  "ServerName": "tose-salamat",
+  "SqlInstance": "localhost\\SEPIDAR",
+  "BackupDir": "E:\\Backup_Cloud",
+  "Remote": "parspack:BUCKET/tose-salamat",
+  "RcloneExe": "C:\\rclone\\rclone.exe",
+  "RcloneConf": "C:\\rclone\\rclone.conf",
+  "KeepLocalDays": 3,
+  "KeepCloudDays": 90,
+  "MinFreeGB": 5,
+  "Compression": true,
+  "ExcludeDatabases": [],
+  "Databases": []
+}
