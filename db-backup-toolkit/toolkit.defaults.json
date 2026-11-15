@@ -1,0 +1,6 @@
+{
+  "Endpoint": "https://c719736.parspack.net",
+  "Bucket": "c719736",
+  "At": "02:00",
+  "UpdateBase": "https://raw.githubusercontent.com/moh3nsh/Bash/main/db-backup-toolkit"
+}

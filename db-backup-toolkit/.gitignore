@@ -1,6 +1,8 @@
 backup.config.json
 rclone.conf
+rclone.secret
 *.bak
 *.lock
 backup_log.txt*
 rclone/rclone.exe
+update_check.txt

@@ -1,80 +1,63 @@
-# DB Backup Toolkit (SQL Server -> S3-compatible cloud via rclone)
+# DB Backup Toolkit (SQL Server -> Parspack/S3 via rclone)
 
-Nightly backup of every user database on a Windows SQL Server, uploaded to an
-S3-compatible bucket (tested with Parspack). Same scripts for every server;
-only `backup.config.json` differs.
+Daily backup of every user database on a Windows SQL Server to an S3-compatible
+bucket. The same zip/folder is used on every server; `Setup.cmd` does everything.
 
-## What it does per database
-1. `BACKUP DATABASE ... WITH COPY_ONLY, CHECKSUM` (compression is used automatically
-   when the edition supports it; Express edition does not).
-2. `RESTORE VERIFYONLY ... WITH CHECKSUM`
-3. `rclone copy` to `REMOTE/<ServerName>/<Database>/`
-4. `rclone check --size-only` to confirm the file in the cloud matches
-5. Log line `OK: <db> (<MB>)` or a `... FAILED` line with the SQL/rclone output
+## Install / update / health-check on any server
+1. Extract the zip (keep the folder structure), optionally drop `rclone.exe` or the rclone zip in `rclone\`.
+2. Double-click **`Setup.cmd`** (it asks for Administrator itself).
 
-Old files (local `KeepLocalDays`, cloud `KeepCloudDays`) are deleted **only if all
-databases succeeded**. `COPY_ONLY` keeps the backup chain of the application
-(Sepidar, Rahkaran, ...) untouched. A lock file prevents overlapping runs, and the
-run aborts if the backup disk has less than `MinFreeGB` free.
+It will, in order: check GitHub for a newer toolkit and apply it; install rclone; create
+the encrypted key file `C:\rclone\rclone.secret` (asks for the Parspack access/secret key **locally**, hidden; the keys are never in the zip/git and never readable in `rclone.conf`); find `sqlcmd` and the SQL instance automatically; find the bucket; write the
+config; install `backup.ps1` to `C:\Scripts\DbBackup`; register the daily 02:00 task; run a
+test backup and show the cloud listing. Every step prints `[OK]`, `[FIXED]` or `[WARN]`.
+
+**Re-running `Setup.cmd` is always safe**: it reports and fixes whatever is outdated or
+broken (new version, changed script, missing rclone/config, missing or different task) and
+leaves everything else alone. Existing settings are kept.
+
+Unattended: `Setup.cmd -Unattended -NoTest` (needs `rclone.conf` already in place).
+Overrides: `-ServerName`, `-SqlInstance`, `-BackupDir`, `-Remote`, `-At "21:00"`, `-NoTask`, `-Force`.
+
+## What a nightly run does, per database
+1. `BACKUP DATABASE ... COPY_ONLY, CHECKSUM` (compressed when the edition allows; Express cannot)
+2. `RESTORE VERIFYONLY ... CHECKSUM`
+3. `rclone copy` to `REMOTE/<ServerName>/<Database>/`, then `rclone check --size-only`
+4. **Cloud retention (per database, only after that database succeeded):**
+   keep the newest **10** backups; plus **one long-term copy** in
+   `REMOTE/<ServerName>/_long/<Database>/` that is kept **30 days** (a new one is made
+   when the previous is about 29 days old, so there is always one)
+5. Local `.bak` files older than `KeepLocalDays` (3) are deleted if everything succeeded
+6. Once a day it checks GitHub; if a newer version exists the log gets
+   `UPDATE AVAILABLE ... run Setup.cmd` (it never updates itself silently)
+
+Backups go to `C:\Backup_Cloud` (created automatically). `COPY_ONLY` keeps the application's own
+backup chain (Sepidar, Rahkaran...) untouched. A lock file prevents overlapping runs; the run
+aborts if the backup disk has less than `MinFreeGB` free.
 
 ## Files
 | File | Purpose |
 |---|---|
-| `backup.ps1` | The backup job, reads `backup.config.json` |
-| `install.ps1` | One-time setup per server: checks, copies files, writes config, registers the scheduled task |
-| `backup.config.example.json` | Config reference |
+| `Setup.cmd` / `setup.ps1` | Installer, updater and health check |
+| `backup.ps1` | The nightly job (installed to `C:\Scripts\DbBackup`) |
+| `toolkit.defaults.json` | Non-secret defaults: endpoint, bucket, time, update URL |
+| `VERSION` | Toolkit version (bump it when you change scripts and push) |
+| `backup.config.example.json` | Reference for the per-server config |
 
-## Install on a new server
-Prerequisites: a Windows account that is `sysadmin` in SQL Server. `install.ps1`
-copies `rclone\rclone.exe` (or an `rclone-*-windows-amd64.zip` found in this folder,
-in `rclone\`, or one level up) to `C:\rclone`, or downloads it if the server has internet. If `C:\rclone\rclone.conf` is missing it copies
-`rclone.conf.template`; edit it with `notepad` (never paste keys into shells/chats)
-and run `install.ps1` again.
+## Releasing a change
+Edit the scripts, raise the number in `VERSION`, commit and push. Servers are told by the log
+(daily) and `Setup.cmd` offers to download and apply it. `UpdateBase` in
+`toolkit.defaults.json` must be the raw-GitHub folder that holds these files (repo must be public,
+or updates are simply skipped).
 
-```powershell
-# PowerShell as Administrator, inside this folder
-powershell -ExecutionPolicy Bypass -File .\install.ps1 `
-    -ServerName "customer-name" `
-    -SqlInstance "localhost\INSTANCE" `
-    -BackupDir "E:\Backup_Cloud" `
-    -Remote "parspack:BUCKET/customer-name"
-```
-Choose a `BackupDir` on a disk with free space that is **not** the database disk.
-Use a folder dedicated to this tool: it deletes old `*.bak` files in it.
-
-Test by hand, then check the cloud:
+## Test / check by hand
 ```powershell
 powershell -ExecutionPolicy Bypass -File C:\Scripts\DbBackup\backup.ps1
-Get-Content E:\Backup_Cloud\backup_log.txt -Tail 10
-C:\rclone\rclone.exe ls parspack:BUCKET/customer-name --config C:\rclone\rclone.conf
+Get-Content C:\Backup_Cloud\backup_log.txt -Tail 20
+C:\rclone\rclone.exe ls parspack:c719736/<ServerName> --config C:\rclone\rclone.conf
+Get-ScheduledTaskInfo -TaskName DbBackup-Cloud
 ```
-Exit code = number of failed databases (0 = OK). The scheduled task result
-(`Get-ScheduledTaskInfo -TaskName DbBackup-Cloud`) shows the same code.
+Restore test once a month on a spare server. Never commit `rclone.conf` or keys.
 
-## Config keys
-`ServerName` (cloud folder name), `SqlInstance`, `BackupDir`, `Remote`, `RcloneExe`,
-`RcloneConf`, `KeepLocalDays`, `KeepCloudDays`, `MinFreeGB`, `Compression`,
-`ExcludeDatabases` (names to skip), `Databases` (if non-empty, only these).
-
-## Security notes
-- Backups contain business/financial data. Get the customer's written approval
-  before sending them off-site.
-- The files in the bucket are **not encrypted** by this toolkit. Add an rclone
-  `crypt` remote on top of the bucket (keep its password outside the server) and
-  point `Remote` at it, e.g. `parspack-crypt:customer-name`.
-- Never commit `rclone.conf` or keys. Rotate any key that was ever pasted into a
-  chat or ticket.
-- The install folder is restricted to Administrators/SYSTEM.
-
-## Restore test (do this monthly)
-Download one file with `rclone copy`, then on a test instance:
-```sql
-RESTORE DATABASE [TestRestore] FROM DISK = N'E:\Restore\file.bak'
-WITH MOVE 'LogicalData' TO 'E:\Restore\t.mdf', MOVE 'LogicalLog' TO 'E:\Restore\t.ldf';
-```
-(`RESTORE FILELISTONLY FROM DISK = ...` shows the logical names.)
-
-## Notes
-- Windows PowerShell 5.1 compatible (Server 2016/2019/2022).
-- The scripts contain no secrets and are safe to keep in git; `.gitignore` already
-  excludes the per-server config and rclone.conf.
+## Where the keys live
+The Parspack keys are stored encrypted with Windows DPAPI (machine scope) in `C:\rclone\rclone.secret`, readable only by Administrators/SYSTEM (and the task account); `rclone.conf` is an empty stub, so opening it in notepad shows no secret. An old plaintext `rclone.conf` is migrated automatically on the next `Setup.cmd`. Note: any local administrator can still decrypt it by script - this protects against casual viewing, not against an admin on the server.

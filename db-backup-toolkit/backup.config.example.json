@@ -1,14 +1,18 @@
 {
   "ServerName": "tose-salamat",
   "SqlInstance": "localhost\\SEPIDAR",
-  "BackupDir": "E:\\Backup_Cloud",
-  "Remote": "parspack:BUCKET/tose-salamat",
+  "SqlcmdExe": "C:\\Program Files\\Microsoft SQL Server\\Client SDK\\ODBC\\170\\Tools\\Binn\\sqlcmd.exe",
+  "BackupDir": "C:\\Backup_Cloud",
+  "Remote": "parspack:c719736",
+  "At": "02:00",
   "RcloneExe": "C:\\rclone\\rclone.exe",
   "RcloneConf": "C:\\rclone\\rclone.conf",
   "KeepLocalDays": 3,
-  "KeepCloudDays": 90,
+  "KeepCloudCount": 10,
+  "KeepLongDays": 30,
   "MinFreeGB": 5,
   "Compression": true,
   "ExcludeDatabases": [],
-  "Databases": []
+  "Databases": [],
+  "UpdateBase": "https://raw.githubusercontent.com/moh3nsh/Bash/main/db-backup-toolkit"
 }
